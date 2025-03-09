@@ -61,21 +61,27 @@ class GraphRec(nn.Module):
         self.criterion = nn.MSELoss()
 
     def forward(self, nodes_u, nodes_v):
+        #user embedding
         embeds_u = self.enc_u(nodes_u)
+        #item embedding
         embeds_v = self.enc_v_history(nodes_v)
 
         x_u = F.relu(self.bn1(self.w_ur1(embeds_u)))
         x_u = F.dropout(x_u, training=self.training)
         x_u = self.w_ur2(x_u)
+
         x_v = F.relu(self.bn2(self.w_vr1(embeds_v)))
         x_v = F.dropout(x_v, training=self.training)
         x_v = self.w_vr2(x_v)
 
+        #combines and predicts rating
         x_uv = torch.cat((x_u, x_v), 1)
         x = F.relu(self.bn3(self.w_uv1(x_uv)))
         x = F.dropout(x, training=self.training)
         x = F.relu(self.bn4(self.w_uv2(x)))
         x = F.dropout(x, training=self.training)
+
+        #final prediction
         scores = self.w_uv3(x)
         return scores.squeeze()
 
@@ -131,59 +137,9 @@ def get_event_recommendations(model, user_id, all_events, top_n=10, device="cpu"
 
     return event_scores[:top_n]
 
-def main():
-        parser = argparse.ArgumentParser(description='Social Recommendation: GraphRec model')
-        parser.add_argument('--embed_dim', type=int, default=64, metavar='N', help='embedding size')
-        args = parser.parse_args()
-
-        os.environ['CUDA_VISIBLE_DEVICES'] = '0'
-        use_cuda = torch.cuda.is_available()
-        device = torch.device("cuda" if use_cuda else "cpu")
-
-        embed_dim = args.embed_dim
-        dir_data = 'data/toy_dataset'
-        path_data = dir_data + ".pickle"
-
-        with open(path_data, 'rb') as data_file:
-            history_u_lists, history_ur_lists, history_v_lists, history_vr_lists, train_u, train_v, train_r, \
-                test_u, test_v, test_r, social_adj_lists, ratings_list = pickle.load(data_file)
-
-        num_users = len(history_u_lists)
-        num_items = len(history_v_lists)
-        num_ratings = len(ratings_list)
-
-        u2e = nn.Embedding(num_users, embed_dim).to(device)
-        v2e = nn.Embedding(num_items, embed_dim).to(device)
-        r2e = nn.Embedding(num_ratings, embed_dim).to(device)
-
-        agg_u_history = UV_Aggregator(v2e, r2e, u2e, embed_dim, cuda=device, uv=True)
-        enc_u_history = UV_Encoder(u2e, embed_dim, history_u_lists, history_ur_lists, agg_u_history, cuda=device,
-                                   uv=True)
-        agg_u_social = Social_Aggregator(lambda nodes: enc_u_history(nodes).t(), u2e, embed_dim, cuda=device)
-        enc_u = Social_Encoder(lambda nodes: enc_u_history(nodes).t(), embed_dim, social_adj_lists, agg_u_social,
-                               base_model=enc_u_history, cuda=device)
-
-        agg_v_history = UV_Aggregator(v2e, r2e, u2e, embed_dim, cuda=device, uv=False)
-        enc_v_history = UV_Encoder(v2e, embed_dim, history_v_lists, history_vr_lists, agg_v_history, cuda=device,
-                                   uv=False)
-
-        graphrec = GraphRec(enc_u, enc_v_history, r2e).to(device)
-
-        # Load the trained model
-        graphrec.load_state_dict(torch.load("graphrec_model.pth"))
-        graphrec.eval()  # Set model to evaluation mode
-        print("Model loaded. Ready to generate recommendations.")
-
-        # Get recommendations for a user
-        user_id = 42  # Example user
-        all_events = list(range(num_items))  # List of all possible events/groups
-        top_n = 5  # Number of recommendations
-
-        recommendations = get_event_recommendations(graphrec, user_id, all_events, top_n=top_n)
-        print(f"Top {top_n} recommended events/groups for user {user_id}: {recommendations}")
 
 
-'''
+def runTraining():
     # Training settings
     parser = argparse.ArgumentParser(description='Social Recommendation: GraphRec model')
     parser.add_argument('--batch_size', type=int, default=128, metavar='N', help='input batch size for training')
@@ -210,12 +166,12 @@ def main():
     ## toy dataset 
     history_u_lists, history_ur_lists:  user's purchased history (item set in training set), and his/her rating score (dict)
     history_v_lists, history_vr_lists:  user set (in training set) who have interacted with the item, and rating score (dict)
-    
+
     train_u, train_v, train_r: training_set (user, item, rating)
     test_u, test_v, test_r: testing set (user, item, rating)
-    
+
     # please add the validation set
-    
+
     social_adj_lists: user's connected neighborhoods
     ratings_list: rating value from 0.5 to 4.0 (8 opinion embeddings)
     """
@@ -226,6 +182,7 @@ def main():
                                              torch.FloatTensor(test_r))
     train_loader = torch.utils.data.DataLoader(trainset, batch_size=args.batch_size, shuffle=True)
     test_loader = torch.utils.data.DataLoader(testset, batch_size=args.test_batch_size, shuffle=True)
+
     num_users = history_u_lists.__len__()
     num_items = history_v_lists.__len__()
     num_ratings = ratings_list.__len__()
@@ -238,6 +195,7 @@ def main():
     # features: item * rating
     agg_u_history = UV_Aggregator(v2e, r2e, u2e, embed_dim, cuda=device, uv=True)
     enc_u_history = UV_Encoder(u2e, embed_dim, history_u_lists, history_ur_lists, agg_u_history, cuda=device, uv=True)
+
     # neighobrs
     agg_u_social = Social_Aggregator(lambda nodes: enc_u_history(nodes).t(), u2e, embed_dim, cuda=device)
     enc_u = Social_Encoder(lambda nodes: enc_u_history(nodes).t(), embed_dim, social_adj_lists, agg_u_social,
@@ -272,7 +230,86 @@ def main():
 
         if endure_count > 5:
             break
-'''
+
+def main():
+
+    #must run this first
+    #runTraining()
+    parser = argparse.ArgumentParser(description='Social Recommendation: GraphRec model')
+    parser.add_argument('--embed_dim', type=int, default=64, metavar='N', help='embedding size')
+    args = parser.parse_args()
+
+    os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+    use_cuda = torch.cuda.is_available()
+    device = torch.device("cuda" if use_cuda else "cpu")
+
+    embed_dim = args.embed_dim
+    dir_data = 'data/toy_dataset'
+    path_data = dir_data + ".pickle"
+
+    with open(path_data, 'rb') as data_file:
+        history_u_lists, history_ur_lists, history_v_lists, history_vr_lists, train_u, train_v, train_r, \
+            test_u, test_v, test_r, social_adj_lists, ratings_list = pickle.load(data_file)
+
+    num_users = len(history_u_lists)
+    num_items = len(history_v_lists)
+    num_ratings = len(ratings_list)
+
+    u2e = nn.Embedding(num_users, embed_dim).to(device)
+    v2e = nn.Embedding(num_items, embed_dim).to(device)
+    r2e = nn.Embedding(num_ratings, embed_dim).to(device)
+
+    agg_u_history = UV_Aggregator(v2e, r2e, u2e, embed_dim, cuda=device, uv=True)
+    enc_u_history = UV_Encoder(u2e, embed_dim, history_u_lists, history_ur_lists, agg_u_history, cuda=device,
+                               uv=True)
+    agg_u_social = Social_Aggregator(lambda nodes: enc_u_history(nodes).t(), u2e, embed_dim, cuda=device)
+    enc_u = Social_Encoder(lambda nodes: enc_u_history(nodes).t(), embed_dim, social_adj_lists, agg_u_social,
+                           base_model=enc_u_history, cuda=device)
+
+    agg_v_history = UV_Aggregator(v2e, r2e, u2e, embed_dim, cuda=device, uv=False)
+    enc_v_history = UV_Encoder(v2e, embed_dim, history_v_lists, history_vr_lists, agg_v_history, cuda=device,
+                               uv=False)
+
+    graphrec = GraphRec(enc_u, enc_v_history, r2e).to(device)
+
+    # Load the trained model
+    graphrec.load_state_dict(torch.load("graphrec_model.pth"))
+    graphrec.eval()  # Set model to evaluation mode
+    print("Model loaded. Ready to generate recommendations.")
+
+    # Get recommendations for a user
+    user_id = 42  # Example user
+    all_events = list(range(num_items))  # List of all possible events/groups
+    top_n = 5  # Number of recommendations
+
+    recommendations = get_event_recommendations(graphrec, user_id, all_events, top_n=top_n)
+    print(f"Top {top_n} recommended events/groups for user {user_id}: {recommendations}")
+
+
 
 if __name__ == "__main__":
-    main()
+    dir_data = './data/toy_dataset'
+
+    path_data = dir_data + ".pickle"
+    data_file = open(path_data, 'rb')
+    history_u_lists, history_ur_lists, history_v_lists, history_vr_lists, train_u, train_v, train_r, test_u, test_v, test_r, social_adj_lists, ratings_list = pickle.load(
+        data_file)
+    #
+    # print(f"history_u_lists: {history_u_lists}")
+    # print(f"history_ur_lists: {history_ur_lists}")
+    #
+    #
+    print(f"history_v_lists: {history_v_lists}")
+    # print(f"history_vr_lists: {history_vr_lists}")
+
+    # print(f"train_u: {train_u}")
+    # print(f"train_v: {train_v}")
+    # print(f"train_r: {train_r}")
+    # print(f"test_u: {test_u}")
+    # print(f"test_v: {test_v}")
+    # print(f"test_r: {test_r}")
+    # print(f"social_adj_lists: {social_adj_lists}")
+    # print(f"ratings_list: {ratings_list}")
+
+
+    #main()
