@@ -1,0 +1,14 @@
+
+    """
+    ## toy dataset
+    history_u_lists, history_ur_lists:  user's purchased history (item set in training set), and his/her rating score (dict)
+    history_v_lists, history_vr_lists:  user set (in training set) who have interacted with the item, and rating score (dict)
+
+    train_u, train_v, train_r: training_set (user, item, rating)
+    test_u, test_v, test_r: testing set (user, item, rating)
+
+    # please add the validation set
+
+    social_adj_lists: user's connected neighborhoods
+    ratings_list: rating value from 0.5 to 4.0 (8 opinion embeddings)
+    """
