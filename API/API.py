@@ -1,5 +1,4 @@
 import pickle
-
 from fastapi import FastAPI, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -24,13 +23,15 @@ async def root():
     return {"message": "Hello World"}
 
 #send user info for prediction?
-@app.post("/user-recommendation")
+@app.post("/recommendation/")
 async def get_recommendation():
     # PASS THE USER STUFF IN THE PARAMS
     # call the graph rec model here?
-    #model = get_model("models/recommendation.pkl")
+    model = get_model("models/recommendation.pkl")
     user = 'smth'
     #prediction = model.predict(user)
     prediction = ['x','y','z']
     return {"Prediction": f"Get user info and return the recommendations for that user, prediction is {prediction[1]}"}
 
+@app.post("/recommendation/")
+async def get_group():
