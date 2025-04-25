@@ -196,6 +196,8 @@ def main():
         if endure_count > 5:
             break
 
+    #### SAVE MODEL AFTER TRAINING ####
+
     def get_event_recommendations(user_id, event_id_map, top_n=10):
         user_tensor = torch.LongTensor([user_id]).to(device)
         all_events = list(range(num_items))

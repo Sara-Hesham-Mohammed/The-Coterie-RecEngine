@@ -1,6 +1,9 @@
 import pickle
 from fastapi import FastAPI, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from API.User_Model import User
+from Clusters.clusters import get_clusters
+from typing import List
 
 
 def get_model(path):
@@ -33,5 +36,11 @@ async def get_recommendation():
     prediction = ['x','y','z']
     return {"Prediction": f"Get user info and return the recommendations for that user, prediction is {prediction[1]}"}
 
-@app.post("/recommendation/")
-async def get_group():
+@app.post("/get-group/")
+@app.post("/get-group/")
+async def form_groups(users: List[User]):
+    users_dict = [user.model_dump() for user in users]
+
+    groups = get_clusters(users_dict)
+
+    return groups
