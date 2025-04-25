@@ -129,10 +129,13 @@ celerybeat.pid
 *.sage.py
 
 # Environments
+funkyunicorn-venv/
 .env
 .venv
 env/
 venv/
+*/venv/
+*.venv/
 ENV/
 env.bak/
 venv.bak/
