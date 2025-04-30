@@ -1,12 +1,7 @@
 import torch
 import torch.nn as nn
-from torch.nn import init
-from torch.autograd import Variable
 import pickle
 import numpy as np
-import time
-import random
-from collections import defaultdict
 from UV_Encoders import UV_Encoder
 from UV_Aggregators import UV_Aggregator
 from Social_Encoders import Social_Encoder
@@ -16,7 +11,6 @@ import torch.utils.data
 from sklearn.metrics import mean_squared_error
 from sklearn.metrics import mean_absolute_error
 from math import sqrt
-import datetime
 import argparse
 import os
 
@@ -197,37 +191,45 @@ def main():
             break
 
     #### SAVE MODEL AFTER TRAINING ####
+    torch.save(graphrec.state_dict(), 'model.pth')
 
-    def get_event_recommendations(user_id, event_id_map, top_n=10):
-        user_tensor = torch.LongTensor([user_id]).to(device)
-        all_events = list(range(num_items))
-        event_tensor = torch.LongTensor(all_events).to(device)
+    def get_recommended_events(model, user_id, all_events, device, top_k=10, history_u_lists=None):
+        model.eval()
 
-        # Replicate user_id for all events
-        user_tensor = user_tensor.repeat(len(all_events))
+        # Get events the user hasn't interacted with
+        if user_id in history_u_lists:
+            user_events = set(history_u_lists[user_id])
+        else:
+            user_events = set()  # New user with no history
+
+        # Filter to only events the user hasn't seen
+        candidate_events = [e for e in all_events if e not in user_events]
+
+        # Prepare batches for prediction
+        batch_size = 128
+        predictions = []
 
         with torch.no_grad():
-            scores = graphrec.forward(user_tensor, event_tensor)
+            # Process in batches to avoid memory issues
+            for i in range(0, len(candidate_events), batch_size):
+                batch_events = candidate_events[i:i + batch_size]
 
-        scores = scores.cpu().numpy()
-        event_scores = list(zip(all_events, scores))
-        event_scores.sort(key=lambda x: x[1], reverse=True)
+                # Create tensors
+                test_usr = torch.full((len(batch_events),), user_id, dtype=torch.long).to(device)
+                test_item = torch.tensor(batch_events, dtype=torch.long).to(device)
 
-        # Get top N recommendations
-        top_recommendations = event_scores[:top_n]
+                # Get predictions
+                pred_ratings = model.forward(test_usr, test_item)
 
-        # Map back to original event IDs if needed
-        reverse_event_map = {v: k for k, v in event_id_map.items()}
-        top_recommendations = [(reverse_event_map[event], score) for event, score in top_recommendations]
+                # Store results
+                for j, event_id in enumerate(batch_events):
+                    predictions.append((event_id, pred_ratings[j].item()))
 
-        return top_recommendations
+        # Sort by predicted rating
+        sorted_predictions = sorted(predictions, key=lambda x: x[1], reverse=True)
 
-    # Example: Get recommendations for a specific user
-    sample_user_id = 0
-    recommendations = get_event_recommendations(sample_user_id, top_n=5)
-    print(f"Top 5 event recommendations for user {sample_user_id}:")
-    for event_id, score in recommendations:
-        print(f"Event ID: {event_id}, Score: {score:.4f}")
+        # Return top-k recommendations
+        return sorted_predictions[:top_k]
 
 if __name__ == "__main__":
     main()

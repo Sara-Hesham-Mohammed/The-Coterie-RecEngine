@@ -3,5 +3,5 @@
   <component name="Black">
     <option name="sdkName" value="GraphRecEnv" />
   </component>
-  <component name="ProjectRootManager" version="2" project-jdk-name="GraphRecEnv" project-jdk-type="Python SDK" />
+  <component name="ProjectRootManager" version="2" project-jdk-name="graphrec-py310" project-jdk-type="Python SDK" />
 </project>
