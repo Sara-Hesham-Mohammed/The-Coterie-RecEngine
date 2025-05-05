@@ -3,7 +3,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from torch import device
 
-from GraphRec_WWW19.run_GraphRec_example import GraphRec
+from GraphRec_WWW19.graphrec_fixed import GraphRec
 from models.models import RecommendationRequest
 
 app = FastAPI()
