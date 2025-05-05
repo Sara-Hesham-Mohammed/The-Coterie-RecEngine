@@ -18,7 +18,7 @@ else:
 
 # Load your CSV files
 print("Loading CSV files...")
-import pandas as pd
+
 
 # Set a consistent random seed for reproducibility
 RANDOM_SEED = 42

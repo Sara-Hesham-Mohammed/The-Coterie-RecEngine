@@ -1,11 +1,12 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch import device
 
 
 class UV_Encoder(nn.Module):
 
-    def __init__(self, features, embed_dim, history_uv_lists, history_r_lists, aggregator, cuda="cpu", uv=True):
+    def __init__(self, features, embed_dim, history_uv_lists, history_r_lists, aggregator, cuda=device, uv=True):
         super(UV_Encoder, self).__init__()
 
         self.features = features

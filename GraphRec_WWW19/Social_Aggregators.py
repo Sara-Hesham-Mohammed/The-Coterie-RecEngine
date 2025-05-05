@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 from Attention import Attention
+from torch import device
 
 
 class Social_Aggregator(nn.Module):
@@ -8,7 +9,7 @@ class Social_Aggregator(nn.Module):
     Social Aggregator: for aggregating embeddings of social neighbors.
     """
 
-    def __init__(self, features, u2e, embed_dim, cuda="cpu"):
+    def __init__(self, features, u2e, embed_dim, cuda=device):
         super(Social_Aggregator, self).__init__()
 
         self.features = features

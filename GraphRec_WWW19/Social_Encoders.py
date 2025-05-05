@@ -1,11 +1,12 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch import device
 
 
 class Social_Encoder(nn.Module):
 
-    def __init__(self, features, embed_dim, social_adj_lists, aggregator, base_model=None, cuda="cpu"):
+    def __init__(self, features, embed_dim, social_adj_lists, aggregator, base_model=None, cuda=device):
         super(Social_Encoder, self).__init__()
 
         self.features = features

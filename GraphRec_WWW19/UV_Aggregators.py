@@ -1,6 +1,8 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch import device
+
 from Attention import Attention
 
 
@@ -9,7 +11,7 @@ class UV_Aggregator(nn.Module):
     item and user aggregator: for aggregating embeddings of neighbors (item/user aggreagator).
     """
 
-    def __init__(self, v2e, r2e, u2e, embed_dim, cuda="cpu", uv=True):
+    def __init__(self, v2e, r2e, u2e, embed_dim, cuda=device, uv=True):
         super(UV_Aggregator, self).__init__()
         self.uv = uv
         self.v2e = v2e
@@ -22,13 +24,23 @@ class UV_Aggregator(nn.Module):
         self.att = Attention(self.embed_dim)
 
     def forward(self, nodes, history_uv, history_r):
+        # Debug: Check device of input tensors
+        print(f"\n[DEBUG] Input nodes device: {nodes.device}")  # Should be CUDA
+        print(f"[DEBUG] history_uv device: {torch.tensor(history_uv).device}")  # Might be CPU (fix if needed)
+        print(f"[DEBUG] history_r device: {torch.tensor(history_r).device}")  # Might be CPU (fix if needed)
 
         embed_matrix = torch.empty(len(history_uv), self.embed_dim, dtype=torch.float).to(self.device)
+
+        print(f"[DEBUG] embed_matrix device: {embed_matrix.device}")  # Should be CUDA
 
         for i in range(len(history_uv)):
             history = history_uv[i]
             num_histroy_item = len(history)
             tmp_label = history_r[i]
+
+            # Debug: Check device of indexed embeddings
+            print(f"[DEBUG] self.v2e.weight device: {self.v2e.weight.device}")  # Should be CUDA
+            print(f"[DEBUG] self.u2e.weight device: {self.u2e.weight.device}")  # Should be CUDA
 
             if self.uv == True:
                 # user component
@@ -40,7 +52,10 @@ class UV_Aggregator(nn.Module):
                 uv_rep = self.v2e.weight[nodes[i]]
 
             e_r = self.r2e.weight[tmp_label]
+            print(f"[DEBUG] e_uv/e_r/uv_rep devices: {e_uv.device}, {e_r.device}, {uv_rep.device}")  # All CUDA
+
             x = torch.cat((e_uv, e_r), 1)
+            print(f"[DEBUG] x device: {x.device}")  # Should be CUDA
             x = F.relu(self.w_r1(x))
             o_history = F.relu(self.w_r2(x))
 

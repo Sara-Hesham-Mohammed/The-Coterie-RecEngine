@@ -1,7 +1,7 @@
 import torch
 from GraphRec_WWW19.graphrec_fixed import load_model_for_inference, add_new_user, update_user_event_interaction, \
     get_recommended_events
-import requests
+
 
 
 class APIBasedGraphRec:
