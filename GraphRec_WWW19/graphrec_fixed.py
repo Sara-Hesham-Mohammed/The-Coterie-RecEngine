@@ -1,6 +1,5 @@
 import gc
 import os
-
 import torch
 import torch.nn as nn
 import pickle
@@ -15,7 +14,8 @@ from sklearn.metrics import mean_squared_error
 from sklearn.metrics import mean_absolute_error
 from math import sqrt
 import argparse
-
+#
+# from recommend import get_recommended_events
 
 """
 GraphRec: Graph Neural Networks for Social Recommendation. 
@@ -47,7 +47,9 @@ class GraphRec(nn.Module):
         self.criterion = nn.MSELoss()
 
     def forward(self, nodes_u, nodes_v):
-        embeds_u = self.enc_u(nodes_u)
+        print("error part")
+        embeds_u = self.enc_u(nodes_u) # TODO: CHECK THIS ERROR
+        print("end of error part")
         embeds_v = self.enc_v_history(nodes_v)
 
         x_u = F.relu(self.bn1(self.w_ur1(embeds_u)))
@@ -103,58 +105,6 @@ def test(model, device, test_loader):
     mae = mean_absolute_error(tmp_pred, target)
     return expected_rmse, mae
 
-
-def get_recommended_events(model, user_id, all_events, device, top_k=10, history_u_lists=None):
-    """
-    Get recommended events for a user
-
-    Args:
-        model: Trained GraphRec model
-        user_id: User ID to get recommendations for
-        all_events: List of all event IDs
-        device: Device to run inference on (cuda/cpu)
-        top_k: Number of recommendations to return
-        history_u_lists: Dictionary of user's event history
-
-    Returns:
-        List of tuples (event_id, predicted_rating)
-    """
-    model.eval()
-
-    # Get events the user hasn't interacted with
-    if history_u_lists and user_id in history_u_lists:
-        user_events = set(history_u_lists[user_id])
-    else:
-        user_events = set()  # New user with no history
-
-    # Filter to only events the user hasn't seen
-    candidate_events = [e for e in all_events if e not in user_events]
-
-    # Prepare batches for prediction
-    batch_size = 128
-    predictions = []
-
-    with torch.no_grad():
-        # Process in batches to avoid memory issues
-        for i in range(0, len(candidate_events), batch_size):
-            batch_events = candidate_events[i:i + batch_size]
-
-            # Create tensors
-            test_usr = torch.full((len(batch_events),), user_id, dtype=torch.long).to(device)
-            test_item = torch.tensor(batch_events, dtype=torch.long).to(device)
-
-            # Get predictions
-            pred_ratings = model.forward(test_usr, test_item)
-
-            # Store results
-            for j, event_id in enumerate(batch_events):
-                predictions.append((event_id, pred_ratings[j].item()))
-
-    # Sort by predicted rating
-    sorted_predictions = sorted(predictions, key=lambda x: x[1], reverse=True)
-
-    # Return top-k recommendations
-    return sorted_predictions[:top_k]
 
 
 def save_model_with_metadata(model, model_path, data_path, embed_dim):
@@ -292,54 +242,101 @@ def update_user_event_interaction(user_id, event_id, rating, history_u_lists, hi
     return history_u_lists, history_ur_lists, history_v_lists, history_vr_lists
 
 
+
+
+def debug_memory_usage():
+    """Print current memory usage statistics"""
+    if torch.cuda.is_available():
+        print(f"CUDA Memory - Allocated: {torch.cuda.memory_allocated() / 1e9:.2f} GB")
+        print(f"CUDA Memory - Reserved: {torch.cuda.memory_reserved() / 1e9:.2f} GB")
+        print(f"CUDA Memory - Max Allocated: {torch.cuda.max_memory_allocated() / 1e9:.2f} GB")
+
+    try:
+        import psutil
+        process = psutil.Process(os.getpid())
+        print(f"CPU Memory Usage: {process.memory_info().rss / 1e9:.2f} GB")
+    except ImportError:
+        print("Install psutil for CPU memory tracking")
+
+
 def memory_efficient_data_loading(data_path, batch_size, test_batch_size, use_cuda=True):
     """
-    Memory-efficient data loading for GraphRec
+    Memory-efficient data loading for GraphRec with additional debugging
     """
-    print(f"Loading data from {data_path} USING THE EFFICIENT FN")
+    print(f"Loading data from {data_path}")
+    debug_memory_usage()
 
     # Force garbage collection before loading data
     gc.collect()
 
-    # Load data in chunks or with a context manager to ensure memory is released
+    # Load data incrementally
+    print("Starting data loading...")
     with open(data_path, 'rb') as data_file:
-        # Load the data
+        print("Loading pickle file...")
         data = pickle.load(data_file)
+        print("Pickle loaded, unpacking data...")
 
-        # Unpack the data immediately to avoid keeping the whole structure in memory
         history_u_lists = data[0]
+        print("  - Loaded history_u_lists")
         history_ur_lists = data[1]
+        print("  - Loaded history_ur_lists")
         history_v_lists = data[2]
+        print("  - Loaded history_v_lists")
         history_vr_lists = data[3]
+        print("  - Loaded history_vr_lists")
+
+        # Check the first few items to verify structure
+        print(f"Sample history_u_lists: {list(history_u_lists.items())[:2]}")
+        print(f"Sample history_ur_lists: {list(history_ur_lists.items())[:2]}")
+
         train_u = data[4]
+        print(f"  - Loaded train_u (len: {len(train_u)}, type: {type(train_u)})")
         train_v = data[5]
+        print(f"  - Loaded train_v (len: {len(train_v)}, type: {type(train_v)})")
         train_r = data[6]
+        print(f"  - Loaded train_r (len: {len(train_r)}, type: {type(train_r)})")
+
         test_u = data[7]
+        print(f"  - Loaded test_u (len: {len(test_u)}, type: {type(test_u)})")
         test_v = data[8]
+        print(f"  - Loaded test_v (len: {len(test_v)}, type: {type(test_v)})")
         test_r = data[9]
+        print(f"  - Loaded test_r (len: {len(test_r)}, type: {type(test_r)})")
+
         social_adj_lists = data[10]
+        print("  - Loaded social_adj_lists")
         ratings_list = data[11]
+        print("  - Loaded ratings_list")
 
         # Delete the combined data structure to free memory
         del data
         gc.collect()
 
+    debug_memory_usage()
     print("Converting data to tensors...")
 
-    # Convert training data to tensors
+    # Check device setup
     device = torch.device("cuda" if use_cuda and torch.cuda.is_available() else "cpu")
+    print(f"Using device: {device}")
+
+    if use_cuda and torch.cuda.is_available():
+        print(f"CUDA Device: {torch.cuda.get_device_name(0)}")
+        print(f"CUDA Device Count: {torch.cuda.device_count()}")
+
     pin_memory = use_cuda and torch.cuda.is_available()
 
     # Process in smaller chunks if needed
-    # Try to use numpy arrays first for more efficient memory usage
+    print("Converting training data to numpy arrays...")
     train_u = np.array(train_u, dtype=np.int64)
     train_v = np.array(train_v, dtype=np.int64)
     train_r = np.array(train_r, dtype=np.float32)
 
+    print("Converting test data to numpy arrays...")
     test_u = np.array(test_u, dtype=np.int64)
     test_v = np.array(test_v, dtype=np.int64)
     test_r = np.array(test_r, dtype=np.float32)
 
+    print("Creating TensorDatasets...")
     # First create the dataset (this is more memory efficient than creating tensors first)
     trainset = torch.utils.data.TensorDataset(
         torch.from_numpy(train_u),
@@ -357,8 +354,13 @@ def memory_efficient_data_loading(data_path, batch_size, test_batch_size, use_cu
     del train_u, train_v, train_r, test_u, test_v, test_r
     gc.collect()
 
+    debug_memory_usage()
+
     # Create data loaders with worker settings for memory efficiency
+    print("Creating DataLoaders...")
     num_workers = 0  # Start with 0 and increase if memory allows
+    prefetch_factor = 2  # Lower prefetch factor for memory efficiency
+
     train_loader = torch.utils.data.DataLoader(
         trainset,
         batch_size=batch_size,
@@ -380,11 +382,11 @@ def memory_efficient_data_loading(data_path, batch_size, test_batch_size, use_cu
     num_ratings = len(ratings_list)
 
     print(f"Data loaded with {num_users} users and {num_items} events")
+    debug_memory_usage()
 
     return (history_u_lists, history_ur_lists, history_v_lists, history_vr_lists,
             train_loader, test_loader, social_adj_lists, ratings_list,
             num_users, num_items, num_ratings)
-
 
 def main():
     # Training settings
@@ -401,6 +403,8 @@ def main():
     parser.add_argument('--user_id', type=int, default=None, help='user ID for recommendations')
     parser.add_argument('--top_k', type=int, default=10, help='number of recommendations')
     args = parser.parse_args()
+
+
 
     # Set CUDA device
     os.environ['CUDA_VISIBLE_DEVICES'] = '0'
@@ -426,20 +430,29 @@ def main():
         v2e = nn.Embedding(num_items, embed_dim).to(device)
         r2e = nn.Embedding(num_ratings, embed_dim).to(device)
 
+        print("embeddings sent to device")
+
         # user feature
         # features: item * rating
         agg_u_history = UV_Aggregator(v2e, r2e, u2e, embed_dim, cuda=device, uv=True)
         enc_u_history = UV_Encoder(u2e, embed_dim, history_u_lists, history_ur_lists, agg_u_history, cuda=device,
                                    uv=True)
+
+        print("UV stuff done")
+
         # neighobrs
         agg_u_social = Social_Aggregator(lambda nodes: enc_u_history(nodes).t(), u2e, embed_dim, cuda=device)
         enc_u = Social_Encoder(lambda nodes: enc_u_history(nodes).t(), embed_dim, social_adj_lists, agg_u_social,
                                base_model=enc_u_history, cuda=device)
 
+        print("neighbors stuff done")
+
         # item feature: user * rating
         agg_v_history = UV_Aggregator(v2e, r2e, u2e, embed_dim, cuda=device, uv=False)
         enc_v_history = UV_Encoder(v2e, embed_dim, history_v_lists, history_vr_lists, agg_v_history, cuda=device,
                                    uv=False)
+
+        print("User rating stuff done")
 
         # model
         graphrec = GraphRec(enc_u, enc_v_history, r2e).to(device)
@@ -453,9 +466,10 @@ def main():
             print(f"Model is on: {next(graphrec.parameters()).device}")  # Should print 'cuda:0'
             print(f"Data sample is on: {next(iter(train_loader))[0].device}")  # Should print 'cpu' (moved later)
 
-            for epoch in range(1, args.epochs + 1):
+            for epoch in range(args.epochs + 1):
                 train(graphrec, device, train_loader, optimizer, epoch, best_rmse, best_mae)
                 expected_rmse, mae = test(graphrec, device, test_loader)
+                print("User rating stuff done")
 
                 # early stopping
                 if best_rmse > expected_rmse:
@@ -484,26 +498,27 @@ def main():
             expected_rmse, mae = test(graphrec, device, test_loader)
             print(f"Test results - RMSE: {expected_rmse:.4f}, MAE: {mae:.4f}")
 
-    elif args.mode == 'recommend':
-        if args.user_id is None:
-            print("Error: User ID required for recommendations")
-            return
-
-        # Load model
-        model, history_u_lists, history_v_lists, ratings_list = load_model_for_inference(
-            args.model_path, device)
-
-        # Get all event IDs
-        all_events = list(range(len(history_v_lists)))
-
-        # Get recommendations
-        recommendations = get_recommended_events(
-            model, args.user_id, all_events, device,
-            top_k=args.top_k, history_u_lists=history_u_lists)
-
-        print(f"Top {args.top_k} recommendations for user {args.user_id}:")
-        for i, (event_id, score) in enumerate(recommendations):
-            print(f"{i + 1}. Event ID: {event_id}, Predicted Rating: {score:.2f}")
+        save_model_with_metadata(graphrec, 'graphrec_model.pth', args.data_path, embed_dim)
+    # elif args.mode == 'recommend':
+    #     if args.user_id is None:
+    #         print("Error: User ID required for recommendations")
+    #         return
+    #
+    #     # Load model
+    #     model, history_u_lists, history_v_lists, ratings_list = load_model_for_inference(
+    #         args.model_path, device)
+    #
+    #     # Get all event IDs
+    #     all_events = list(range(len(history_v_lists)))
+    #
+    #     # Get recommendations
+    #     recommendations = get_recommended_events(
+    #         model, args.user_id, all_events, device,
+    #         top_k=args.top_k, history_u_lists=history_u_lists)
+    #
+    #     print(f"Top {args.top_k} recommendations for user {args.user_id}:")
+    #     for i, (event_id, score) in enumerate(recommendations):
+    #         print(f"{i + 1}. Event ID: {event_id}, Predicted Rating: {score:.2f}")
 
 
 if __name__ == "__main__":

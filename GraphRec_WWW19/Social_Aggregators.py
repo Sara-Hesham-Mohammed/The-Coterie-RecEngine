@@ -20,20 +20,31 @@ class Social_Aggregator(nn.Module):
 
     def forward(self, nodes, to_neighs):
         embed_matrix = torch.empty(len(nodes), self.embed_dim, dtype=torch.float).to(self.device)
+
         for i in range(len(nodes)):
             tmp_adj = to_neighs[i]
             num_neighs = len(tmp_adj)
-            # 
-            e_u = self.u2e.weight[list(tmp_adj)] # fast: user embedding 
-            #slow: item-space user latent factor (item aggregation)
-            #feature_neigbhors = self.features(torch.LongTensor(list(tmp_adj)).to(self.device))
-            #e_u = torch.t(feature_neigbhors)
 
+            # Fast user embedding
+            e_u = self.u2e.weight[list(tmp_adj)]
+
+            # User representation
             u_rep = self.u2e.weight[nodes[i]]
 
+            # Attention weights
             att_w = self.att(e_u, u_rep, num_neighs)
+
+            # Ensure att_w is correctly shaped
+            if att_w.dim() == 1:  # If it's a 1D tensor, reshape it to a column vector
+                print("att_w dim is 1. Performing transformation.")
+                att_w = att_w.view(-1, 1)
+
+
+            # Matrix multiplication
+            print("e_u shape:", e_u.shape)
+            print("att_w shape:", att_w.shape)
+            print("Attempting matrix multiplication.")
             att_history = torch.mm(e_u.t(), att_w).t()
             embed_matrix[i] = att_history
-        to_feats = embed_matrix
 
-        return to_feats
+        return embed_matrix

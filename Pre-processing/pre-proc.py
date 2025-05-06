@@ -22,9 +22,9 @@ print("Loading CSV files...")
 
 # Set a consistent random seed for reproducibility
 RANDOM_SEED = 42
-FRAC = 0.6  # 60% sample
+FRAC = 0.25  # 25% sample
 
-print("Sampling 60% of each dataset...")
+print("Sampling 25% of each dataset...")
 
 user_event_0 = pd.read_csv('../Dataset/cleaned_user_event_0.csv').sample(frac=FRAC, random_state=RANDOM_SEED)
 user_event_1 = pd.read_csv('../Dataset/cleaned_user_event_1.csv').sample(frac=FRAC, random_state=RANDOM_SEED)
