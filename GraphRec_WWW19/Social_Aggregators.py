@@ -25,6 +25,11 @@ class Social_Aggregator(nn.Module):
             tmp_adj = to_neighs[i]
             num_neighs = len(tmp_adj)
 
+            if num_neighs == 0:
+                # Option 1: Use the node's own embedding as fallback
+                embed_matrix[i] = self.u2e.weight[nodes[i]]
+                continue
+
             # Fast user embedding
             e_u = self.u2e.weight[list(tmp_adj)]
 
@@ -34,17 +39,12 @@ class Social_Aggregator(nn.Module):
             # Attention weights
             att_w = self.att(e_u, u_rep, num_neighs)
 
-            # Ensure att_w is correctly shaped
-            if att_w.dim() == 1:  # If it's a 1D tensor, reshape it to a column vector
-                print("att_w dim is 1. Performing transformation.")
+            if att_w.dim() == 1:
                 att_w = att_w.view(-1, 1)
 
-
             # Matrix multiplication
-            print("e_u shape:", e_u.shape)
-            print("att_w shape:", att_w.shape)
-            print("Attempting matrix multiplication.")
             att_history = torch.mm(e_u.t(), att_w).t()
             embed_matrix[i] = att_history
 
         return embed_matrix
+
