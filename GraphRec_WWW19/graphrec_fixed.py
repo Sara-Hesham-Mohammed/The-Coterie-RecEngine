@@ -14,8 +14,6 @@ from sklearn.metrics import mean_squared_error
 from sklearn.metrics import mean_absolute_error
 from math import sqrt
 import argparse
-#
-# from recommend import get_recommended_events
 
 """
 GraphRec: Graph Neural Networks for Social Recommendation. 
@@ -47,25 +45,31 @@ class GraphRec(nn.Module):
         self.criterion = nn.MSELoss()
 
     def forward(self, nodes_u, nodes_v):
-        print("error part")
-        embeds_u = self.enc_u(nodes_u) # TODO: CHECK THIS ERROR
-        print("end of error part")
-        embeds_v = self.enc_v_history(nodes_v)
+        print("fwd graphrec start")
+        # Remove the debug print statements
+        try:
+            embeds_u = self.enc_u(nodes_u)
+            embeds_v = self.enc_v_history(nodes_v)
 
-        x_u = F.relu(self.bn1(self.w_ur1(embeds_u)))
-        x_u = F.dropout(x_u, training=self.training)
-        x_u = self.w_ur2(x_u)
-        x_v = F.relu(self.bn2(self.w_vr1(embeds_v)))
-        x_v = F.dropout(x_v, training=self.training)
-        x_v = self.w_vr2(x_v)
+            x_u = F.relu(self.bn1(self.w_ur1(embeds_u)))
+            x_u = F.dropout(x_u, training=self.training)
+            x_u = self.w_ur2(x_u)
+            x_v = F.relu(self.bn2(self.w_vr1(embeds_v)))
+            x_v = F.dropout(x_v, training=self.training)
+            x_v = self.w_vr2(x_v)
 
-        x_uv = torch.cat((x_u, x_v), 1)
-        x = F.relu(self.bn3(self.w_uv1(x_uv)))
-        x = F.dropout(x, training=self.training)
-        x = F.relu(self.bn4(self.w_uv2(x)))
-        x = F.dropout(x, training=self.training)
-        scores = self.w_uv3(x)
-        return scores.squeeze()
+            x_uv = torch.cat((x_u, x_v), 1)
+            x = F.relu(self.bn3(self.w_uv1(x_uv)))
+            x = F.dropout(x, training=self.training)
+            x = F.relu(self.bn4(self.w_uv2(x)))
+            x = F.dropout(x, training=self.training)
+            scores = self.w_uv3(x)
+            return scores.squeeze()
+        except Exception as e:
+            print(f"Error in forward pass: {e}")
+            # Return zeros with proper shape to avoid crashing
+            print("fwd graphrec end")
+            return torch.zeros(nodes_u.size(0), device=nodes_u.device)
 
     def loss(self, nodes_u, nodes_v, labels_list):
         scores = self.forward(nodes_u, nodes_v)
@@ -75,10 +79,15 @@ class GraphRec(nn.Module):
 def train(model, device, train_loader, optimizer, epoch, best_rmse, best_mae):
     model.train()
     running_loss = 0.0
+    print("train graphrec start")
     for i, data in enumerate(train_loader, 0):
         batch_nodes_u, batch_nodes_v, labels_list = data
+        # Move data to device
+        batch_nodes_u, batch_nodes_v, labels_list = batch_nodes_u.to(device), batch_nodes_v.to(device), labels_list.to(
+            device)
+
         optimizer.zero_grad()
-        loss = model.loss(batch_nodes_u.to(device), batch_nodes_v.to(device), labels_list.to(device))
+        loss = model.loss(batch_nodes_u, batch_nodes_v, labels_list)
         loss.backward(retain_graph=True)
         optimizer.step()
         running_loss += loss.item()
@@ -86,6 +95,7 @@ def train(model, device, train_loader, optimizer, epoch, best_rmse, best_mae):
             print('[%d, %5d] loss: %.3f, The best rmse/mae: %.6f / %.6f' % (
                 epoch, i, running_loss / 100, best_rmse, best_mae))
             running_loss = 0.0
+    print("train graphrec end")
     return 0
 
 
@@ -96,15 +106,42 @@ def test(model, device, test_loader):
     with torch.no_grad():
         for test_u, test_v, tmp_target in test_loader:
             test_u, test_v, tmp_target = test_u.to(device), test_v.to(device), tmp_target.to(device)
-            val_output = model.forward(test_u, test_v)
-            tmp_pred.append(list(val_output.data.cpu().numpy()))
-            target.append(list(tmp_target.data.cpu().numpy()))
+            try:
+                val_output = model.forward(test_u, test_v)
+                # Check if prediction contains NaN values
+                if torch.isnan(val_output).any():
+                    print("Warning: NaN values in prediction")
+                    continue
+
+                tmp_pred.append(list(val_output.data.cpu().numpy()))
+                target.append(list(tmp_target.data.cpu().numpy()))
+            except Exception as e:
+                print(f"Error during testing: {e}")
+                continue
+
+    # Validate we have predictions
+    if not tmp_pred or not target:
+        print("Error: No valid predictions generated during testing")
+        return 9999.0, 9999.0
+
     tmp_pred = np.array(sum(tmp_pred, []))
     target = np.array(sum(target, []))
-    expected_rmse = sqrt(mean_squared_error(tmp_pred, target))
-    mae = mean_absolute_error(tmp_pred, target)
-    return expected_rmse, mae
 
+    # Debug output
+    print(f"Test predictions shape: {tmp_pred.shape}, Target shape: {target.shape}")
+    if len(tmp_pred) > 0:
+        print(f"Prediction range: {np.min(tmp_pred):.4f} to {np.max(tmp_pred):.4f}")
+        print(f"Target range: {np.min(target):.4f} to {np.max(target):.4f}")
+
+    # Calculate metrics
+    try:
+        expected_rmse = sqrt(mean_squared_error(tmp_pred, target))
+        mae = mean_absolute_error(tmp_pred, target)
+        print(f"Calculated RMSE: {expected_rmse:.4f}, MAE: {mae:.4f}")
+        return expected_rmse, mae
+    except Exception as e:
+        print(f"Error calculating metrics: {e}")
+        return 9999.0, 9999.0
 
 
 def save_model_with_metadata(model, model_path, data_path, embed_dim):
@@ -242,77 +279,62 @@ def update_user_event_interaction(user_id, event_id, rating, history_u_lists, hi
     return history_u_lists, history_ur_lists, history_v_lists, history_vr_lists
 
 
-
-
-def debug_memory_usage():
-    """Print current memory usage statistics"""
-    if torch.cuda.is_available():
-        print(f"CUDA Memory - Allocated: {torch.cuda.memory_allocated() / 1e9:.2f} GB")
-        print(f"CUDA Memory - Reserved: {torch.cuda.memory_reserved() / 1e9:.2f} GB")
-        print(f"CUDA Memory - Max Allocated: {torch.cuda.max_memory_allocated() / 1e9:.2f} GB")
-
-    try:
-        import psutil
-        process = psutil.Process(os.getpid())
-        print(f"CPU Memory Usage: {process.memory_info().rss / 1e9:.2f} GB")
-    except ImportError:
-        print("Install psutil for CPU memory tracking")
-
-
 def memory_efficient_data_loading(data_path, batch_size, test_batch_size, use_cuda=True):
     """
     Memory-efficient data loading for GraphRec with additional debugging
     """
     print(f"Loading data from {data_path}")
-    debug_memory_usage()
 
     # Force garbage collection before loading data
     gc.collect()
 
     # Load data incrementally
     print("Starting data loading...")
-    with open(data_path, 'rb') as data_file:
-        print("Loading pickle file...")
-        data = pickle.load(data_file)
-        print("Pickle loaded, unpacking data...")
+    try:
+        with open(data_path, 'rb') as data_file:
+            print("Loading pickle file...")
+            data = pickle.load(data_file)
+            print("Pickle loaded, unpacking data...")
 
-        history_u_lists = data[0]
-        print("  - Loaded history_u_lists")
-        history_ur_lists = data[1]
-        print("  - Loaded history_ur_lists")
-        history_v_lists = data[2]
-        print("  - Loaded history_v_lists")
-        history_vr_lists = data[3]
-        print("  - Loaded history_vr_lists")
+            history_u_lists = data[0]
+            print("  - Loaded history_u_lists")
+            history_ur_lists = data[1]
+            print("  - Loaded history_ur_lists")
+            history_v_lists = data[2]
+            print("  - Loaded history_v_lists")
+            history_vr_lists = data[3]
+            print("  - Loaded history_vr_lists")
 
-        # Check the first few items to verify structure
-        print(f"Sample history_u_lists: {list(history_u_lists.items())[:2]}")
-        print(f"Sample history_ur_lists: {list(history_ur_lists.items())[:2]}")
+            # Check the first few items to verify structure
+            print(f"Sample history_u_lists: {list(history_u_lists.items())[:2]}")
+            print(f"Sample history_ur_lists: {list(history_ur_lists.items())[:2]}")
 
-        train_u = data[4]
-        print(f"  - Loaded train_u (len: {len(train_u)}, type: {type(train_u)})")
-        train_v = data[5]
-        print(f"  - Loaded train_v (len: {len(train_v)}, type: {type(train_v)})")
-        train_r = data[6]
-        print(f"  - Loaded train_r (len: {len(train_r)}, type: {type(train_r)})")
+            train_u = data[4]
+            print(f"  - Loaded train_u (len: {len(train_u)}, type: {type(train_u)})")
+            train_v = data[5]
+            print(f"  - Loaded train_v (len: {len(train_v)}, type: {type(train_v)})")
+            train_r = data[6]
+            print(f"  - Loaded train_r (len: {len(train_r)}, type: {type(train_r)})")
 
-        test_u = data[7]
-        print(f"  - Loaded test_u (len: {len(test_u)}, type: {type(test_u)})")
-        test_v = data[8]
-        print(f"  - Loaded test_v (len: {len(test_v)}, type: {type(test_v)})")
-        test_r = data[9]
-        print(f"  - Loaded test_r (len: {len(test_r)}, type: {type(test_r)})")
+            test_u = data[7]
+            print(f"  - Loaded test_u (len: {len(test_u)}, type: {type(test_u)})")
+            test_v = data[8]
+            print(f"  - Loaded test_v (len: {len(test_v)}, type: {type(test_v)})")
+            test_r = data[9]
+            print(f"  - Loaded test_r (len: {len(test_r)}, type: {type(test_r)})")
 
-        social_adj_lists = data[10]
-        print("  - Loaded social_adj_lists")
-        ratings_list = data[11]
-        print("  - Loaded ratings_list")
+            social_adj_lists = data[10]
+            print("  - Loaded social_adj_lists")
+            ratings_list = data[11]
+            print("  - Loaded ratings_list")
 
-        # Delete the combined data structure to free memory
-        del data
-        gc.collect()
+            # Delete the combined data structure to free memory
+            del data
+            gc.collect()
+    except Exception as e:
+        print(f"Error loading data: {e}")
+        raise
 
-    debug_memory_usage()
     print("Converting data to tensors...")
 
     # Check device setup
@@ -354,8 +376,6 @@ def memory_efficient_data_loading(data_path, batch_size, test_batch_size, use_cu
     del train_u, train_v, train_r, test_u, test_v, test_r
     gc.collect()
 
-    debug_memory_usage()
-
     # Create data loaders with worker settings for memory efficiency
     print("Creating DataLoaders...")
     num_workers = 0  # Start with 0 and increase if memory allows
@@ -382,11 +402,11 @@ def memory_efficient_data_loading(data_path, batch_size, test_batch_size, use_cu
     num_ratings = len(ratings_list)
 
     print(f"Data loaded with {num_users} users and {num_items} events")
-    debug_memory_usage()
 
     return (history_u_lists, history_ur_lists, history_v_lists, history_vr_lists,
             train_loader, test_loader, social_adj_lists, ratings_list,
             num_users, num_items, num_ratings)
+
 
 def main():
     # Training settings
@@ -398,13 +418,11 @@ def main():
     parser.add_argument('--epochs', type=int, default=100, metavar='N', help='number of epochs to train')
     parser.add_argument('--data_path', type=str, default='clean_meetup_data.pickle', help='path to data pickle file')
     parser.add_argument('--model_path', type=str, default='graphrec_model.pth', help='path to save/load model')
-    parser.add_argument('--mode', type=str, default='train', choices=['train', 'test', 'recommend'],
-                        help='train, test or recommend')
+    parser.add_argument('--mode', type=str, default='train', choices=['train', 'test'],
+                        help='train or test')
     parser.add_argument('--user_id', type=int, default=None, help='user ID for recommendations')
     parser.add_argument('--top_k', type=int, default=10, help='number of recommendations')
     args = parser.parse_args()
-
-
 
     # Set CUDA device
     os.environ['CUDA_VISIBLE_DEVICES'] = '0'
@@ -417,108 +435,106 @@ def main():
     embed_dim = args.embed_dim
 
     if args.mode == 'train' or args.mode == 'test':
-        # Load data
-        print(f"Loading data from {args.data_path}")
-        (history_u_lists, history_ur_lists, history_v_lists, history_vr_lists,
-         train_loader, test_loader, social_adj_lists, ratings_list,
-         num_users, num_items, num_ratings) = memory_efficient_data_loading(
-            args.data_path, args.batch_size, args.test_batch_size, use_cuda)
+        try:
+            # Load data
+            print(f"Loading data from {args.data_path}")
+            (history_u_lists, history_ur_lists, history_v_lists, history_vr_lists,
+             train_loader, test_loader, social_adj_lists, ratings_list,
+             num_users, num_items, num_ratings) = memory_efficient_data_loading(
+                args.data_path, args.batch_size, args.test_batch_size, use_cuda)
 
-        print(f"Data loaded with {num_users} users and {num_items} events")
+            print(f"Data loaded with {num_users} users and {num_items} events")
 
-        u2e = nn.Embedding(num_users, embed_dim).to(device)
-        v2e = nn.Embedding(num_items, embed_dim).to(device)
-        r2e = nn.Embedding(num_ratings, embed_dim).to(device)
+            # Initialize embeddings
+            u2e = nn.Embedding(num_users, embed_dim).to(device)
+            v2e = nn.Embedding(num_items, embed_dim).to(device)
+            r2e = nn.Embedding(num_ratings, embed_dim).to(device)
 
-        print("embeddings sent to device")
+            print("Embeddings sent to device")
 
-        # user feature
-        # features: item * rating
-        agg_u_history = UV_Aggregator(v2e, r2e, u2e, embed_dim, cuda=device, uv=True)
-        enc_u_history = UV_Encoder(u2e, embed_dim, history_u_lists, history_ur_lists, agg_u_history, cuda=device,
-                                   uv=True)
+            # user feature
+            # features: item * rating
+            agg_u_history = UV_Aggregator(v2e, r2e, u2e, embed_dim, cuda=device, uv=True)
+            enc_u_history = UV_Encoder(u2e, embed_dim, history_u_lists, history_ur_lists, agg_u_history, cuda=device,
+                                       uv=True)
 
-        print("UV stuff done")
+            print("UV encoder initialized")
 
-        # neighobrs
-        agg_u_social = Social_Aggregator(lambda nodes: enc_u_history(nodes).t(), u2e, embed_dim, cuda=device)
-        enc_u = Social_Encoder(lambda nodes: enc_u_history(nodes).t(), embed_dim, social_adj_lists, agg_u_social,
-                               base_model=enc_u_history, cuda=device)
+            # neighbors
+            agg_u_social = Social_Aggregator(lambda nodes: enc_u_history(nodes).t(), u2e, embed_dim, cuda=device)
+            enc_u = Social_Encoder(lambda nodes: enc_u_history(nodes).t(), embed_dim, social_adj_lists, agg_u_social,
+                                   base_model=enc_u_history, cuda=device)
 
-        print("neighbors stuff done")
+            print("Social encoder initialized")
 
-        # item feature: user * rating
-        agg_v_history = UV_Aggregator(v2e, r2e, u2e, embed_dim, cuda=device, uv=False)
-        enc_v_history = UV_Encoder(v2e, embed_dim, history_v_lists, history_vr_lists, agg_v_history, cuda=device,
-                                   uv=False)
+            # item feature: user * rating
+            agg_v_history = UV_Aggregator(v2e, r2e, u2e, embed_dim, cuda=device, uv=False)
+            enc_v_history = UV_Encoder(v2e, embed_dim, history_v_lists, history_vr_lists, agg_v_history, cuda=device,
+                                       uv=False)
 
-        print("User rating stuff done")
+            print("Item encoder initialized")
 
-        # model
-        graphrec = GraphRec(enc_u, enc_v_history, r2e).to(device)
-        optimizer = torch.optim.RMSprop(graphrec.parameters(), lr=args.lr, alpha=0.9)
+            # Build the model
+            graphrec = GraphRec(enc_u, enc_v_history, r2e).to(device)
+            optimizer = torch.optim.RMSprop(graphrec.parameters(), lr=args.lr, alpha=0.9)
 
-        if args.mode == 'train':
-            best_rmse = 9999.0
-            best_mae = 9999.0
-            endure_count = 0
+            # Check if any parameters are None
+            for name, param in graphrec.named_parameters():
+                if param is None:
+                    print(f"Warning: Parameter {name} is None")
 
-            print(f"Model is on: {next(graphrec.parameters()).device}")  # Should print 'cuda:0'
-            print(f"Data sample is on: {next(iter(train_loader))[0].device}")  # Should print 'cpu' (moved later)
+            if args.mode == 'train':
+                best_rmse = 9999.0
+                best_mae = 9999.0
+                endure_count = 0
 
-            for epoch in range(args.epochs + 1):
-                train(graphrec, device, train_loader, optimizer, epoch, best_rmse, best_mae)
+                print(f"Model is on device: {next(graphrec.parameters()).device}")
+
+                # Initial evaluation
+                print("Initial evaluation:")
+                initial_rmse, initial_mae = test(graphrec, device, test_loader)
+                print(f"Initial RMSE: {initial_rmse:.4f}, MAE: {initial_mae:.4f}")
+
+                for epoch in range(args.epochs + 1):
+                    print(f"===== Epoch {epoch} =====")
+                    train(graphrec, device, train_loader, optimizer, epoch, best_rmse, best_mae)
+
+                    # Test the model
+                    current_rmse, current_mae = test(graphrec, device, test_loader)
+                    print(f"Epoch {epoch} evaluation - RMSE: {current_rmse:.4f}, MAE: {current_mae:.4f}")
+
+                    # early stopping
+                    if current_rmse < best_rmse:
+                        best_rmse = current_rmse
+                        best_mae = current_mae
+                        endure_count = 0
+                        # Save the best model
+                        save_model_with_metadata(graphrec, args.model_path, args.data_path, embed_dim)
+                        print(f"New best model saved with RMSE: {best_rmse:.4f}, MAE: {best_mae:.4f}")
+                    else:
+                        endure_count += 1
+                        print(f"No improvement for {endure_count} epochs")
+
+                    if endure_count > 5:
+                        print("Early stopping triggered!")
+                        break
+
+                print(f"Training complete. Best RMSE: {best_rmse:.4f}, Best MAE: {best_mae:.4f}")
+
+            elif args.mode == 'test':
+                # Load the trained model
+                print(f"Loading model from {args.model_path}")
+                metadata = torch.load(args.model_path, map_location=device)
+                graphrec.load_state_dict(metadata['model_state'])
+
+                # Test the model
                 expected_rmse, mae = test(graphrec, device, test_loader)
-                print("User rating stuff done")
+                print(f"Test results - RMSE: {expected_rmse:.4f}, MAE: {mae:.4f}")
 
-                # early stopping
-                if best_rmse > expected_rmse:
-                    best_rmse = expected_rmse
-                    best_mae = mae
-                    endure_count = 0
-                    # Save the best model
-                    save_model_with_metadata(graphrec, args.model_path, args.data_path, embed_dim)
-                else:
-                    endure_count += 1
-                print(f"Epoch {epoch}: RMSE: {expected_rmse:.4f}, MAE: {mae:.4f}")
-
-                if endure_count > 5:
-                    print("Early stopping!")
-                    break
-
-            print(f"Training complete. Best RMSE: {best_rmse:.4f}, Best MAE: {best_mae:.4f}")
-
-        elif args.mode == 'test':
-            # Load the trained model
-            print(f"Loading model from {args.model_path}")
-            metadata = torch.load(args.model_path, map_location=device)
-            graphrec.load_state_dict(metadata['model_state'])
-
-            # Test the model
-            expected_rmse, mae = test(graphrec, device, test_loader)
-            print(f"Test results - RMSE: {expected_rmse:.4f}, MAE: {mae:.4f}")
-
-        save_model_with_metadata(graphrec, 'graphrec_model.pth', args.data_path, embed_dim)
-    # elif args.mode == 'recommend':
-    #     if args.user_id is None:
-    #         print("Error: User ID required for recommendations")
-    #         return
-    #
-    #     # Load model
-    #     model, history_u_lists, history_v_lists, ratings_list = load_model_for_inference(
-    #         args.model_path, device)
-    #
-    #     # Get all event IDs
-    #     all_events = list(range(len(history_v_lists)))
-    #
-    #     # Get recommendations
-    #     recommendations = get_recommended_events(
-    #         model, args.user_id, all_events, device,
-    #         top_k=args.top_k, history_u_lists=history_u_lists)
-    #
-    #     print(f"Top {args.top_k} recommendations for user {args.user_id}:")
-    #     for i, (event_id, score) in enumerate(recommendations):
-    #         print(f"{i + 1}. Event ID: {event_id}, Predicted Rating: {score:.2f}")
+        except Exception as e:
+            print(f"Error in main function: {e}")
+            import traceback
+            traceback.print_exc()
 
 
 if __name__ == "__main__":

@@ -19,15 +19,12 @@ class Social_Encoder(nn.Module):
         self.linear1 = nn.Linear(2 * self.embed_dim, self.embed_dim)  #
 
     def forward(self, nodes):
-
+        print("fwd encoder start")
         to_neighs = []
         for node in nodes:
             to_neighs.append(self.social_adj_lists[int(node)])
 
-        print("BEFORE NEIGH FEATS")
         neigh_feats = self.aggregator.forward(nodes, to_neighs)  # user-user network
-        print("AFTER NEIGH FEATS")
-        # TODO: NEIGH FEATS ALSO ERROR
 
         self_feats = self.features(torch.LongTensor(nodes.cpu().numpy())).to(self.device)
         self_feats = self_feats.t()
@@ -35,5 +32,5 @@ class Social_Encoder(nn.Module):
         # self-connection could be considered.
         combined = torch.cat([self_feats, neigh_feats], dim=1)
         combined = F.relu(self.linear1(combined))
-
+        print("fwd encoder end")
         return combined
