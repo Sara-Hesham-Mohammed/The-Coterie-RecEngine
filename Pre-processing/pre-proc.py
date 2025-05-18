@@ -2,19 +2,11 @@ import pandas as pd
 import numpy as np
 import pickle
 from collections import defaultdict
-import torch
 import time
 
-print("Starting data processing with GPU acceleration...")
+print("Starting data processing...")
 start_time = time.time()
 
-# Check if CUDA is available
-if torch.cuda.is_available():
-    print(f"CUDA is available: {torch.cuda.get_device_name(0)}")
-    device = torch.device("cuda")
-else:
-    print("CUDA not available, falling back to CPU")
-    device = torch.device("cpu")
 
 # Load your CSV files
 print("Loading CSV files...")
@@ -110,14 +102,15 @@ print(f"Created history lists for {len(history_u_lists)} users and {len(history_
 
 
 # Split into train and test sets (80-20 split)
+# Split into train and test sets (80-20 split)
 print("Creating train/test split...")
 np.random.seed(1234)
 
-# Use GPU for random selection
-indices = torch.randperm(len(user_event), device=device)
+# Use numpy instead of torch for random selection
+indices = np.random.permutation(len(user_event))
 split_idx = int(0.8 * len(user_event))
-train_indices = indices[:split_idx].cpu().numpy()
-test_indices = indices[split_idx:].cpu().numpy()
+train_indices = indices[:split_idx]
+test_indices = indices[split_idx:]
 
 train_data = user_event.iloc[train_indices]
 test_data = user_event.iloc[test_indices]
