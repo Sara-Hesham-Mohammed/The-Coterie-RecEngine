@@ -4,7 +4,7 @@
     <content url="file://$MODULE_DIR$">
       <excludeFolder url="file://$MODULE_DIR$/.venv" />
     </content>
-    <orderEntry type="jdk" jdkName="rec_engine_3_9" jdkType="Python SDK" />
+    <orderEntry type="jdk" jdkName="Python 3.12 (The-Coterie-RecEngine)" jdkType="Python SDK" />
     <orderEntry type="sourceFolder" forTests="false" />
   </component>
 </module>
