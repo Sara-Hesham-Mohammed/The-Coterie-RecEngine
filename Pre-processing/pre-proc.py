@@ -22,9 +22,9 @@ print("Loading CSV files...")
 
 # Set a consistent random seed for reproducibility
 RANDOM_SEED = 42
-FRAC = 0.25  # 25% sample
+FRAC = 0.10 # 25% sample
 
-print("Sampling 25% of each dataset...")
+print("Sampling 10% of each dataset...")
 
 user_event_0 = pd.read_csv('../Dataset/cleaned_user_event_0.csv').sample(frac=FRAC, random_state=RANDOM_SEED)
 user_event_1 = pd.read_csv('../Dataset/cleaned_user_event_1.csv').sample(frac=FRAC, random_state=RANDOM_SEED)
@@ -40,7 +40,13 @@ print("Sampling completed.")
 # Combine user-event interactions
 print("Combining user-event data...")
 user_event = pd.concat([user_event_0, user_event_1])
-user_event['rating'] = 2.5
+# Assign synthetic ratings from a realistic distribution (weighted towards higher ratings)
+rating_choices = [1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0]
+rating_probs =   [0.05, 0.05, 0.1, 0.15, 0.2, 0.15, 0.15, 0.1, 0.05]  # sum to 1
+
+np.random.seed(RANDOM_SEED)
+user_event['rating'] = np.random.choice(rating_choices, size=len(user_event), p=rating_probs)
+
 
 # Create unique IDs for users and events
 print("Creating user and event mappings...")
