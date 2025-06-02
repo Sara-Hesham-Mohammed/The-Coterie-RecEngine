@@ -1,11 +1,12 @@
 from surprise import SVD
 from surprise import accuracy
 from surprise.model_selection import train_test_split
-from surprise import Dataset
+import pandas as pd
 
-movie_data = Dataset.load_builtin('ml-100k')
 
-trainset, testset = train_test_split(movie_data, test_size=.2, random_state=42)
+meetup_datset = pd.load_from_csv()
+
+trainset, testset = train_test_split(meetup_datset, test_size=.2, random_state=42)
 
 svd_recommender = SVD()
 svd_recommender.fit(trainset)
