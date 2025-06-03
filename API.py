@@ -8,6 +8,9 @@ from models.models import RecommendationRequest
 
 app = FastAPI()
 
+# Configure device
+DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=['*'],
@@ -21,17 +24,31 @@ async def root():
     return {"message": "This is the python backend for the recommendation system."}
 
 
-def get_model(path, args=None, kwargs=None):
-    model = GraphRec(*args, **kwargs)
-    model.load_state_dict(torch.load(path))
-    model.eval()
-    return model
+def get_model(path):
+    try:
+        # Load the model state and metadata
+        checkpoint = torch.load(path, map_location=DEVICE)
+        
+        # Initialize model with saved parameters
+        model = GraphRec(
+            enc_u=checkpoint['enc_u'],
+            enc_v_history=checkpoint['enc_v_history'],
+            r2e=checkpoint['r2e']
+        )
+        
+        # Load the state dict
+        model.load_state_dict(checkpoint['model_state_dict'])
+        model.to(DEVICE)
+        model.eval()
+        return model
+    except Exception as e:
+        raise Exception(f"Failed to load model: {str(e)}")
 
 #### RECOMMENDATION ENDPOINT ####
 @app.post("/get-recommendation")
 async def get_recommendation(request: RecommendationRequest):
     try:
-        model = get_model("model.pth")
+        model = get_model("models/trained_model.pth")
         user = request.user
         all_events = request.all_events
 
@@ -39,7 +56,7 @@ async def get_recommendation(request: RecommendationRequest):
             model,
             user.user_id,
             all_events,
-            device,
+            DEVICE,
             top_k=10,
             history_u_lists=user.attendedEvents
         )
