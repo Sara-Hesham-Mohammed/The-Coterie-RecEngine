@@ -550,7 +550,12 @@ def main():
                     print("Early stopping triggered!")
                     break
 
-            print(f"Training complete. Best RMSE: {best_rmse:.4f}, Best MAE: {best_mae:.4f}")
+
+
+
+
+            print(f"TRAINING COMPLETE. Best RMSE: {best_rmse:.4f}, Best MAE: {best_mae:.4f}")
+            print("\nTraining complete. Model saved to:", args.model_path)
 
         elif args.mode == 'test':
             # Load the trained model
