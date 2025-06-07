@@ -1,175 +1,188 @@
 import torch
-import pickle
-from GraphRec import Social_Aggregators as soc_agg, UV_Encoders as uv_enc, graphrec_fixed as model, Social_Encoders as soc_enc, UV_Aggregators as uv_ag
-
+from models.models import Event, User
+import numpy as np
+from typing import List
 
 class EventRecommender:
-    def __init__(self, model_path, data_path, device=None):
+    def __init__(self, model_path, device=None):
         """
-        Initialize the recommender with a trained model and necessary data
+        Initialize the recommender with a trained model
         
         Args:
             model_path (str): Path to the saved model file
-            data_path (str): Path to the pickle file containing necessary data structures
             device (torch.device): Device to run the model on (CPU/GPU)
         """
         self.device = device if device else torch.device("cuda" if torch.cuda.is_available() else "cpu")
         
-        # Load the saved model and data
-        self.load_model_and_data(model_path, data_path)
+        # Load the saved model
+        self.load_model(model_path)
         
-    def load_model_and_data(self, model_path, data_path):
-        """Load the trained model and required data structures"""
-        # Load model metadata
-        metadata = torch.load(model_path, map_location=self.device)
+    def load_model(self, model_path):
+        """Load the trained model"""
+        # Load the complete saved model
+        self.saved_model = torch.load(model_path, map_location=self.device)
         
-        # Load data structures
-        with open(data_path, 'rb') as f:
-            data = pickle.load(f)
-            self.history_u_lists = data[0]
-            self.history_ur_lists = data[1]
-            self.history_v_lists = data[2]
-            self.history_vr_lists = data[3]
-            self.social_adj_lists = data[10]
-            self.ratings_list = data[11]
-        
-        # Get dimensions
-        self.num_users = len(self.history_u_lists)
-        self.num_items = len(self.history_v_lists)
-        self.num_ratings = len(self.ratings_list)
-        self.embed_dim = metadata['embed_dim']
-        
-        # Initialize embeddings
-        self.u2e = torch.nn.Embedding(self.num_users, self.embed_dim).to(self.device)
-        self.v2e = torch.nn.Embedding(self.num_items, self.embed_dim).to(self.device)
-        self.r2e = torch.nn.Embedding(self.num_ratings, self.embed_dim).to(self.device)
-        
-        # Create model components
-        agg_u_history = uv_ag.UV_Aggregator(self.v2e, self.r2e, self.u2e, self.embed_dim, cuda=self.device, uv=True)
-        enc_u_history = uv_enc.UV_Encoder(self.u2e, self.embed_dim, self.history_u_lists, self.history_ur_lists,
-                                 agg_u_history, cuda=self.device, uv=True)
-        
-        agg_u_social = soc_agg.Social_Aggregator(lambda nodes: enc_u_history(nodes).t(),
-                                       self.u2e, self.embed_dim, cuda=self.device)
-        enc_u = soc_enc.Social_Encoder(lambda nodes: enc_u_history(nodes).t(), self.embed_dim,
-                             self.social_adj_lists, agg_u_social, base_model=enc_u_history, 
-                             cuda=self.device)
-        
-        agg_v_history = uv_ag.UV_Aggregator(self.v2e, self.r2e, self.u2e, self.embed_dim, cuda=self.device, uv=False)
-        enc_v_history = uv_enc.UV_Encoder(self.v2e, self.embed_dim, self.history_v_lists, self.history_vr_lists,
-                                 agg_v_history, cuda=self.device, uv=False)
-        
-        # Create and load the model
-        self.model = model.GraphRec(enc_u, enc_v_history, self.r2e).to(self.device)
-        self.model.load_state_dict(metadata['model_state'])
+        # Load the model
+        self.model = self.saved_model['model']
+        self.model.load_state_dict(self.saved_model['model_state'])
+        self.model.to(self.device)
         self.model.eval()
+
+        # Get the embedding layers from the loaded model
+        self.u2e = self.model.user_embedding
+        self.v2e = self.model.item_embedding
+        self.r2e = self.model.rating_embedding
+
+        # Get dimensions from the embedding layers
+        self.num_users = self.u2e.weight.shape[0]
+        self.num_items = self.v2e.weight.shape[0]
+        self.embed_dim = self.u2e.weight.shape[1]
 
         # Save the embeddings for similarity calculations
         with torch.no_grad():
             self.user_embeddings = self.u2e.weight.data.clone()
             self.event_embeddings = self.v2e.weight.data.clone()
 
-    def get_user_embedding(self, user_features):
+    def calculate_similarity_score(self, tags1: set[str], tags2: set[str], loc1: str, loc2: str) -> float:
         """
-        Generate embedding for a new user based on their features and similarity to existing users
+        Calculate similarity score between two entities based on their tags and location
         
         Args:
-            user_features (dict): Dictionary containing user features like:
-                - interests (list): List of user interests/tags
-                - location (tuple): (latitude, longitude)
-                - age (int): User age
-                - etc.
+            tags1: Set of tags for first entity
+            tags2: Set of tags for second entity
+            loc1: Location of first entity
+            loc2: Location of second entity
+            
+        Returns:
+            float: Similarity score between 0 and 1
+        """
+        # Calculate tag similarity using Jaccard similarity
+        tag_similarity = len(tags1.intersection(tags2)) / len(tags1.union(tags2)) if tags1 or tags2 else 0
+        
+        # Calculate location similarity (simple exact match for now)
+        # TODO: Implement proper location similarity using coordinates
+        loc_similarity = 1.0 if loc1 == loc2 else 0.0
+        
+        # Weighted combination (can be adjusted)
+        return 0.7 * tag_similarity + 0.3 * loc_similarity
+
+    def get_user_embedding(self, user: User) -> torch.Tensor:
+        """
+        Generate embedding for a new user based on their features
+        
+        Args:
+            user: User model containing user features
                 
         Returns:
             torch.Tensor: Embedding vector for the new user
         """
-        # Convert user features into a feature vector
-        feature_vector = torch.zeros(self.embed_dim).to(self.device)
-        
-        # TODO: Implement proper user feature processing
-        # For now using a simple approach - find similar users in training data
-        # based on interests/tags overlap and location proximity
-        similar_users = []
+        # Find similar users based on tags and location
         similarity_scores = []
         
-        # For demonstration, using random initialization
-        # In production, implement proper similarity search based on features
-        similar_users = torch.randint(0, self.num_users, (5,))
-        similarity_scores = torch.ones(5) / 5
+        # Compare with all users in training set
+        # TODO: Optimize this using a proper similarity search index
+        for i in range(self.num_users):
+            # Get the embedding for user i and convert to features
+            # This is a placeholder - in production you would have a mapping of user IDs to their features
+            training_user_tags = {"placeholder"}  # Replace with actual tags from training data
+            training_user_loc = "placeholder"     # Replace with actual location from training data
+            
+            score = self.calculate_similarity_score(
+                user.tags,
+                training_user_tags,
+                user.location,
+                training_user_loc
+            )
+            similarity_scores.append(score)
+            
+        # Convert to tensor
+        similarity_scores = torch.tensor(similarity_scores, device=self.device)
         
-        # Get embeddings of similar users
-        similar_embeddings = self.user_embeddings[similar_users]
+        # Get top k similar users
+        k = min(5, len(similarity_scores))
+        top_scores, top_indices = torch.topk(similarity_scores, k)
         
-        # Compute new user embedding as weighted average of similar users
-        similarity_scores = similarity_scores.to(self.device)
-        new_embedding = (similar_embeddings * similarity_scores.unsqueeze(1)).sum(dim=0)
+        # Normalize scores to sum to 1
+        top_scores = top_scores / top_scores.sum()
+        
+        # Get embeddings of similar users and compute weighted average
+        similar_embeddings = self.user_embeddings[top_indices]
+        new_embedding = (similar_embeddings * top_scores.unsqueeze(1)).sum(dim=0)
         
         return new_embedding
         
-    def get_event_embedding(self, event_features):
+    def get_event_embedding(self, event: Event) -> torch.Tensor:
         """
-        Generate embedding for a new event based on its features and similarity to existing events
+        Generate embedding for a new event based on its features
         
         Args:
-            event_features (dict): Dictionary containing event features like:
-                - tags (list): List of event tags
-                - description (str): Event description
-                - location (tuple): (latitude, longitude)
-                - etc.
+            event: Event model containing event features
                 
         Returns:
             torch.Tensor: Embedding vector for the new event
         """
-        # Convert event features into a feature vector
-        feature_vector = torch.zeros(self.embed_dim).to(self.device)
-        
-        # TODO: Implement proper event feature processing
-        # For now using a simple approach - find similar events in training data
-        # based on tag overlap and location proximity
-        similar_events = []
+        # Find similar events based on tags and location
         similarity_scores = []
         
-        # For demonstration, using random initialization
-        # In production, implement proper similarity search based on features
-        similar_events = torch.randint(0, self.num_items, (5,))
-        similarity_scores = torch.ones(5) / 5
+        # Compare with all events in training set
+        # TODO: Optimize this using a proper similarity search index
+        for i in range(self.num_items):
+            # Get the embedding for event i and convert to features
+            # This is a placeholder - in production you would have a mapping of event IDs to their features
+            training_event_tags = {"placeholder"}  # Replace with actual tags from training data
+            training_event_loc = "placeholder"     # Replace with actual location from training data
+            
+            score = self.calculate_similarity_score(
+                event.tags,
+                training_event_tags,
+                event.location,
+                training_event_loc
+            )
+            similarity_scores.append(score)
+            
+        # Convert to tensor
+        similarity_scores = torch.tensor(similarity_scores, device=self.device)
         
-        # Get embeddings of similar events
-        similar_embeddings = self.event_embeddings[similar_events]
+        # Get top k similar events
+        k = min(5, len(similarity_scores))
+        top_scores, top_indices = torch.topk(similarity_scores, k)
         
-        # Compute new event embedding as weighted average of similar events
-        similarity_scores = similarity_scores.to(self.device)
-        new_embedding = (similar_embeddings * similarity_scores.unsqueeze(1)).sum(dim=0)
+        # Normalize scores to sum to 1
+        top_scores = top_scores / top_scores.sum()
+        
+        # Get embeddings of similar events and compute weighted average
+        similar_embeddings = self.event_embeddings[top_indices]
+        new_embedding = (similar_embeddings * top_scores.unsqueeze(1)).sum(dim=0)
         
         return new_embedding
 
-    def get_recommendations(self, user_features, candidate_events_features, top_k=5):
+    def get_recommendations(self, user: User, candidate_events: List[Event], top_k: int = 5):
         """
         Get recommendations for a new user from a list of new candidate events
         
         Args:
-            user_features (dict): Dictionary containing features of the new user
-            candidate_events_features (list): List of dictionaries containing features for new events
-            top_k (int): Number of top recommendations to return
+            user: User model containing user features
+            candidate_events: List of Event models containing event features
+            top_k: Number of top recommendations to return
             
         Returns:
             tuple: (recommended_events_indices, scores) - Indices of recommended events and their scores
         """
         with torch.no_grad():
             # Generate embedding for the new user
-            user_embedding = self.get_user_embedding(user_features)
+            user_embedding = self.get_user_embedding(user)
             
             # Generate embeddings for new events
             event_embeddings = []
-            for event_features in candidate_events_features:
-                embedding = self.get_event_embedding(event_features)
+            for event in candidate_events:
+                embedding = self.get_event_embedding(event)
                 event_embeddings.append(embedding)
             
             event_embeddings = torch.stack(event_embeddings)
             
             # Create temporary IDs
             temp_user_id = self.num_users  # Use an ID outside training range
-            temp_event_ids = list(range(self.num_items, self.num_items + len(candidate_events_features)))
+            temp_event_ids = list(range(self.num_items, self.num_items + len(candidate_events)))
             
             # Prepare input tensors
             user_tensor = torch.LongTensor([temp_user_id] * len(temp_event_ids)).to(self.device)
@@ -208,31 +221,32 @@ class EventRecommender:
 def main():
     # Example usage
     model_path = "graphrec_meetup.pth"
-    data_path = "Pre-processing/clean_meetup_data.pickle"
     
     # Initialize recommender
-    recommender = EventRecommender(model_path, data_path)
+    recommender = EventRecommender(model_path)
     
-    # Example: Create a new user with features
-    new_user = {
-        "interests": ["technology", "networking", "AI"],
-        "location": (40.7128, -74.0060),  # NYC coordinates
-        "age": 28
-    }
+    # Example: Create a new user
+    new_user = User(
+        user_id=999999,  # Use a large ID to avoid conflicts
+        location="New York, NY",
+        tags={"technology", "networking", "AI"},
+        history_events=[]  # No history for new user
+    )
     
-    # Example: Create some new events with features
+    # Example: Create some new events
     new_events = [
-        {
-            "tags": ["technology", "networking"],
-            "description": "A tech meetup about AI",
-            "location": (40.7128, -74.0060)  # NYC coordinates
-        },
-        {
-            "tags": ["social", "food"],
-            "description": "Food festival with local vendors",
-            "location": (40.7214, -73.9951)
-        },
-        # Add more events...
+        Event(
+            event_name="AI Tech Meetup",
+            location="New York, NY",
+            tags={"technology", "networking", "AI"},
+            is_paid=False
+        ),
+        Event(
+            event_name="Food Festival",
+            location="Brooklyn, NY",
+            tags={"social", "food", "festival"},
+            is_paid=True
+        ),
     ]
     
     # Get recommendations for the new user
@@ -240,7 +254,7 @@ def main():
     
     print("Recommendations for new user:")
     for idx, score in zip(recommended_indices, scores):
-        print(f"Event {idx} (features: {new_events[idx]}): Score {score:.3f}")
+        print(f"Event: {new_events[idx].event_name}, Score: {score:.3f}")
 
 
 if __name__ == "__main__":

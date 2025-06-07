@@ -1,6 +1,7 @@
 import torch
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from GraphRec.graphrec_fixed import GraphRec
 from models.models import RecommendationRequest
 
 app = FastAPI()
@@ -21,25 +22,7 @@ async def root():
     return {"message": "This is the python backend for the recommendation system."}
 
 
-def get_model(path):
-    try:
-        # Load the model state and metadata
-        checkpoint = torch.load(path, map_location=DEVICE)
-        
-        # Initialize model with saved parameters
-        model = GraphRec(
-            enc_u=checkpoint['enc_u'],
-            enc_v_history=checkpoint['enc_v_history'],
-            r2e=checkpoint['r2e']
-        )
-        
-        # Load the state dict
-        model.load_state_dict(checkpoint['model_state_dict'])
-        model.to(DEVICE)
-        model.eval()
-        return model
-    except Exception as e:
-        raise Exception(f"Failed to load model: {str(e)}")
+
 
 #### RECOMMENDATION ENDPOINT ####
 @app.post("/get-recommendation")
@@ -60,3 +43,24 @@ async def get_recommendation(request: RecommendationRequest):
         return {"Prediction": prediction}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+def get_model(path):
+    try:
+        # Load the model state and metadata
+        checkpoint = torch.load(path, map_location=DEVICE)
+
+        # Initialize model with saved parameters
+        model = GraphRec(
+            enc_u=checkpoint['enc_u'],
+            enc_v_history=checkpoint['enc_v_history'],
+            r2e=checkpoint['r2e']
+        )
+
+        # Load the state dict
+        model.load_state_dict(checkpoint['model_state_dict'])
+        model.to(DEVICE)
+        model.eval()
+        return model
+    except Exception as e:
+        raise Exception(f"Failed to load model: {str(e)}")
