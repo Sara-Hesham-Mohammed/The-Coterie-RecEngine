@@ -1,8 +1,9 @@
 import torch
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from GraphRec.graphrec_fixed import GraphRec
-from models.models import RecommendationRequest
+from models.models import RecommendationRequest, RecommendationResponse
+import recommend
+from models.models import Event, User
 
 app = FastAPI()
 
@@ -28,39 +29,74 @@ async def root():
 @app.post("/get-recommendation")
 async def get_recommendation(request: RecommendationRequest):
     try:
-        model = get_model("models/trained_model.pth")
-        user = request.user
-        all_events = request.all_events
 
-        prediction = model.get_recommended_events(
-            model,
-            user.user_id,
-            all_events,
-            DEVICE,
-            top_k=10,
-            history_u_lists=user.attendedEvents
-        )
-        return {"Prediction": prediction}
+        user = request.user
+        candidate_events = request.candidate_events
+
+        model_path = "graphrec_meetup.pth"
+
+        # Initialize recommender
+        recommender = recommend.EventRecommender(model_path)
+
+
+        # Get recommendations for the new user
+        recommended_indices, scores = recommender.get_recommendations(user, candidate_events)
+
+        print("Recommendations for new user:")
+        recommendations = []
+        for idx, score in zip(recommended_indices, scores):
+            event = candidate_events[idx]
+            print(f"Event: {event.event_name}, Score: {score:.3f}")
+            recommendations.append({
+                "event": event,
+                "score": float(score)  # Convert numpy float to Python float
+            })
+
+        response = RecommendationResponse(recommendations=recommendations)
+        return {"Prediction": response}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-def get_model(path):
-    try:
-        # Load the model state and metadata
-        checkpoint = torch.load(path, map_location=DEVICE)
 
-        # Initialize model with saved parameters
-        model = GraphRec(
-            enc_u=checkpoint['enc_u'],
-            enc_v_history=checkpoint['enc_v_history'],
-            r2e=checkpoint['r2e']
-        )
+def main():
+    # Example usage
+    model_path = "graphrec_meetup.pth"
 
-        # Load the state dict
-        model.load_state_dict(checkpoint['model_state_dict'])
-        model.to(DEVICE)
-        model.eval()
-        return model
-    except Exception as e:
-        raise Exception(f"Failed to load model: {str(e)}")
+    # Initialize recommender
+    recommender = recommend.EventRecommender(model_path)
+
+    # Example: Create a new user
+    new_user = User(
+        user_id=999999,  # Use a large ID to avoid conflicts
+        location="New York, NY",
+        tags={"technology", "networking", "AI"},
+        history_events=[]  # No history for new user
+    )
+
+    # Example: Create some new events
+    new_events = [
+        Event(
+            event_name="AI Tech Meetup",
+            location="New York, NY",
+            tags={"technology", "networking", "AI"},
+            is_paid=False
+        ),
+        Event(
+            event_name="Food Festival",
+            location="Brooklyn, NY",
+            tags={"social", "food", "festival"},
+            is_paid=True
+        ),
+    ]
+
+    # Get recommendations for the new user
+    recommended_indices, scores = recommender.get_recommendations(new_user, new_events)
+
+    print("Recommendations for new user:")
+    for idx, score in zip(recommended_indices, scores):
+        print(f"Event: {new_events[idx].event_name}, Score: {score:.3f}")
+
+
+if __name__ == "__main__":
+    main()

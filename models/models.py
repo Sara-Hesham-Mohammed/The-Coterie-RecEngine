@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import List
+from typing import List, Dict, Any
 
 class Event(BaseModel):
     event_name: str
@@ -16,3 +16,6 @@ class User(BaseModel):
 class RecommendationRequest(BaseModel):
     user: User
     candidate_events: List[Event]
+
+class RecommendationResponse(BaseModel):
+    recommendations: List[Dict[str, Any]]

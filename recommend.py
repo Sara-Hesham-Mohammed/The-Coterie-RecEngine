@@ -1,6 +1,5 @@
 import torch
 from models.models import Event, User
-import numpy as np
 from typing import List
 
 class EventRecommender:
@@ -217,45 +216,3 @@ class EventRecommender:
             
             return recommended_indices, recommendation_scores
 
-
-def main():
-    # Example usage
-    model_path = "graphrec_meetup.pth"
-    
-    # Initialize recommender
-    recommender = EventRecommender(model_path)
-    
-    # Example: Create a new user
-    new_user = User(
-        user_id=999999,  # Use a large ID to avoid conflicts
-        location="New York, NY",
-        tags={"technology", "networking", "AI"},
-        history_events=[]  # No history for new user
-    )
-    
-    # Example: Create some new events
-    new_events = [
-        Event(
-            event_name="AI Tech Meetup",
-            location="New York, NY",
-            tags={"technology", "networking", "AI"},
-            is_paid=False
-        ),
-        Event(
-            event_name="Food Festival",
-            location="Brooklyn, NY",
-            tags={"social", "food", "festival"},
-            is_paid=True
-        ),
-    ]
-    
-    # Get recommendations for the new user
-    recommended_indices, scores = recommender.get_recommendations(new_user, new_events)
-    
-    print("Recommendations for new user:")
-    for idx, score in zip(recommended_indices, scores):
-        print(f"Event: {new_events[idx].event_name}, Score: {score:.3f}")
-
-
-if __name__ == "__main__":
-    main() 
