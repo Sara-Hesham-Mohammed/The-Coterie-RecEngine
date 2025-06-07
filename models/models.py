@@ -1,10 +1,18 @@
 from pydantic import BaseModel
 from typing import List
 
+class Event(BaseModel):
+    event_name: str
+    location: str
+    tags: set[str]
+    is_paid: bool
+
 class User(BaseModel):
     user_id: int
-    attendedEvents: List[int]
+    location: str
+    tags: set[str]
+    history_events: List[Event]
 
 class RecommendationRequest(BaseModel):
     user: User
-    all_events: List[int]
+    candidate_events: List[Event]
