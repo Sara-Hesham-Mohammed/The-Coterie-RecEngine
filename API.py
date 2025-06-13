@@ -1,6 +1,8 @@
 import torch
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from huggingface_hub import hf_hub_download
+from GraphRec.graphrec_fixed import GraphRec
 from models.models import RecommendationRequest, RecommendationResponse
 import recommend
 from models.models import Event, User
@@ -9,6 +11,16 @@ app = FastAPI()
 
 # Configure device
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+REPO = 'https://huggingface.co/foureyedpookie/GraphRec-Trained'
+
+
+model_path = hf_hub_download(
+    repo_id="foureyedpookie/GraphRec-Trained",
+    filename="graphrec_meetup.pth"
+)
+
+print("Model downloaded to:", model_path)
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -32,8 +44,9 @@ async def get_recommendation(request: RecommendationRequest):
 
         user = request.user
         candidate_events = request.candidate_events
-
-        model_path = "graphrec_meetup.pth"
+        model = GraphRec()
+        model.load_state_dict(torch.load(model_path))
+        model.eval()
 
         # Initialize recommender
         recommender = recommend.EventRecommender(model_path)
@@ -60,10 +73,6 @@ async def get_recommendation(request: RecommendationRequest):
 
 
 def main():
-    # Example usage
-    model_path = "graphrec_meetup.pth"
-
-    # Initialize recommender
     recommender = recommend.EventRecommender(model_path)
 
     # Example: Create a new user
