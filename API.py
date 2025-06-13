@@ -1,11 +1,11 @@
+from models.models import User, RecommendationRequest, RecommendationResponse, Event
+from Recommender import Recommender
 import torch
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from huggingface_hub import hf_hub_download
-from GraphRec.graphrec_fixed import GraphRec
-from models.models import RecommendationRequest, RecommendationResponse
 import recommend
-from models.models import Event, User
+
 
 app = FastAPI()
 
@@ -13,14 +13,12 @@ app = FastAPI()
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 REPO = 'https://huggingface.co/foureyedpookie/GraphRec-Trained'
 
-
 model_path = hf_hub_download(
     repo_id="foureyedpookie/GraphRec-Trained",
     filename="graphrec_meetup.pth"
 )
 
 print("Model downloaded to:", model_path)
-
 
 app.add_middleware(
     CORSMiddleware,
@@ -30,81 +28,89 @@ app.add_middleware(
     allow_headers=['*'],
 )
 
+
 @app.get("/")
 async def root():
     return {"message": "This is the python backend for the recommendation system."}
 
 
-
-
 #### RECOMMENDATION ENDPOINT ####
 @app.post("/get-recommendation")
-async def get_recommendation(request: RecommendationRequest):
+async def get_recommendation(new_user: User, candidate_events: list[Event]):
     try:
+        request = RecommendationRequest(
+            user=new_user,
+            candidate_events=candidate_events
+        )
 
-        user = request.user
-        candidate_events = request.candidate_events
-        model = GraphRec()
-        model.load_state_dict(torch.load(model_path))
-        model.eval()
+        # Initialize service (replace with your actual values)
+        service = Recommender(
+            model_path=model_path,
+            num_users=1000,  # Your actual number
+            num_items=500  # Your actual number
+        )
 
-        # Initialize recommender
-        recommender = recommend.EventRecommender(model_path)
+        # Get recommendations
+        response = service.get_recommendations(request)
 
+        print("Recommendations:")
+        for i, rec in enumerate(response.recommendations):
+            print(f"{i + 1}. {rec['event_name']} - Score: {rec['predicted_rating']:.2f}")
 
-        # Get recommendations for the new user
-        recommended_indices, scores = recommender.get_recommendations(user, candidate_events)
-
-        print("Recommendations for new user:")
-        recommendations = []
-        for idx, score in zip(recommended_indices, scores):
-            event = candidate_events[idx]
-            print(f"Event: {event.event_name}, Score: {score:.3f}")
-            recommendations.append({
-                "event": event,
-                "score": float(score)  # Convert numpy float to Python float
-            })
-
-        response = RecommendationResponse(recommendations=recommendations)
         return {"Prediction": response}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-
 def main():
-    recommender = recommend.EventRecommender(model_path)
 
-    # Example: Create a new user
     new_user = User(
-        user_id=999999,  # Use a large ID to avoid conflicts
-        location="New York, NY",
-        tags={"technology", "networking", "AI"},
-        history_events=[]  # No history for new user
+        user_id=99999,  # New user ID not in training
+        location="San Francisco",
+        tags={"tech", "networking"},
+        history_events=[
+            Event(
+                event_name="Tech Meetup",
+                location="San Francisco",
+                tags={"tech", "AI"},
+                is_paid=False
+            )
+        ]
     )
 
-    # Example: Create some new events
-    new_events = [
+    candidate_events = [
         Event(
-            event_name="AI Tech Meetup",
-            location="New York, NY",
-            tags={"technology", "networking", "AI"},
-            is_paid=False
-        ),
-        Event(
-            event_name="Food Festival",
-            location="Brooklyn, NY",
-            tags={"social", "food", "festival"},
+            event_name="AI Conference",
+            location="San Francisco",
+            tags={"AI", "tech"},
             is_paid=True
         ),
+        Event(
+            event_name="Cooking Class",
+            location="Oakland",
+            tags={"cooking", "social"},
+            is_paid=True
+        )
     ]
 
-    # Get recommendations for the new user
-    recommended_indices, scores = recommender.get_recommendations(new_user, new_events)
+    request = RecommendationRequest(
+        user=new_user,
+        candidate_events=candidate_events
+    )
 
-    print("Recommendations for new user:")
-    for idx, score in zip(recommended_indices, scores):
-        print(f"Event: {new_events[idx].event_name}, Score: {score:.3f}")
+    # Initialize service (replace with your actual values)
+    service = Recommender(
+        model_path=model_path,
+        num_users=1000,  # Your actual number
+        num_items=500  # Your actual number
+    )
+
+    # Get recommendations
+    response = service.get_recommendations(request)
+
+    print("Recommendations:")
+    for i, rec in enumerate(response.recommendations):
+        print(f"{i + 1}. {rec['event_name']} - Score: {rec['predicted_rating']:.2f}")
 
 
 if __name__ == "__main__":
