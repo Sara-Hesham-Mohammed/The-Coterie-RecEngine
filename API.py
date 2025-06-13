@@ -2,7 +2,6 @@ import torch
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from huggingface_hub import hf_hub_download
-from GraphRec.graphrec_fixed import GraphRec
 from models.models import RecommendationRequest, RecommendationResponse
 import recommend
 from models.models import Event, User
@@ -44,9 +43,6 @@ async def get_recommendation(request: RecommendationRequest):
 
         user = request.user
         candidate_events = request.candidate_events
-        model = GraphRec()
-        model.load_state_dict(torch.load(model_path))
-        model.eval()
 
         # Initialize recommender
         recommender = recommend.EventRecommender(model_path)
