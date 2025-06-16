@@ -1,10 +1,10 @@
+from evaluation_metrics import evaluate_rating_model
 from models.models import User, RecommendationRequest, RecommendationResponse, Event
 from Recommender import Recommender
 import torch
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from huggingface_hub import hf_hub_download
-import recommend
 
 
 app = FastAPI()
